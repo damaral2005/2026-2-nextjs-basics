@@ -10,6 +10,7 @@ export interface Student {
     grades:           Grade[];
 }
 
+export type CreateStudentInput = Pick<Student, "name" | "age" | "email" | "gender" | "isActive" | "favoriteSubjects">;
 
 
 export enum Gender {

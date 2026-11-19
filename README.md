@@ -2,6 +2,8 @@
 
 Frontend en Next.js (App Router) para la API de estudiantes hecha con NestJS + Postgres. Se construye por etapas en Computación en Internet 3 (2026-2). Este README documenta únicamente lo que existe hoy en el repo.
 
+La [entrega en PDF](output/pdf/entrega-estudiantes.pdf) incluye el flujo de creación y las pruebas de protección. Las [capturas originales](docs/capturas) muestran el registro, el dashboard, el formulario, el estudiante creado y la redirección al login.
+
 ## Inicio rápido
 
 ```bash
@@ -10,7 +12,16 @@ pnpm install
 pnpm dev                     # http://localhost:3000
 ```
 
-La API de estudiantes (NestJS) debe estar corriendo, por ejemplo en `http://localhost:9000/api`, y poblada con `GET http://localhost:9000/api/seed`.
+La API de NestJS debe estar corriendo, por ejemplo en `http://localhost:9000/api`. Para usar la versión del backend del curso que aún devuelve el usuario sin JWT, aplica [el parche de NestJS](docs/nestjs-auth.patch) desde la raíz de ese proyecto. El parche emite y valida el JWT, expone el perfil y exige sesión en `POST /api/student`.
+
+```powershell
+$frontend = 'C:/ruta/2026-2-nextjs-basics'
+git apply --check "$frontend/docs/nestjs-auth.patch"
+git apply "$frontend/docs/nestjs-auth.patch"
+node -p "require('node:crypto').randomBytes(32).toString('hex')"
+```
+
+Guarda el valor generado como `JWT_SECRET` en el `.env` de NestJS junto con la configuración de PostgreSQL. Reinicia NestJS con `npm run start:dev` y deja `API_URL=http://localhost:9000/api` en el `.env.local` de Next.js.
 
 ## Stack
 
@@ -37,8 +48,10 @@ La API de estudiantes (NestJS) debe estar corriendo, por ejemplo en `http://loca
 |------|---------|-----------|
 | `/` | `app/(public)/page.tsx` | Home pública: hero con la marca, botón "Ir a estudiantes" y la sección "Que vamos a construir?" |
 | `/login` | `app/(auth)/login/page.tsx` | Formulario de login (`LoginForm`). Acepta `?from=` |
+| `/register` | `app/(auth)/register/page.tsx` | Registro de cuentas de acceso |
 | `/students` | `app/(dashboard)/students/page.tsx` | Tabla de estudiantes con búsqueda y paginación (`GET {API_URL}/student`). Acepta `?q=texto&page=2` |
-| `/students/[id]` | `app/(dashboard)/students/[id]/page.tsx` | Detalle de un estudiante (`GET {API_URL}/student/{id}`), con caché y pre-render por `generateStaticParams` |
+| `/students/new` | `app/(dashboard)/students/new/page.tsx` | Formulario protegido para crear un estudiante |
+| `/students/[id]` | `app/(dashboard)/students/[id]/page.tsx` | Detalle de un estudiante (`GET {API_URL}/student/{id}`), con caché y sesión verificada en cada solicitud |
 | `/about` | `app/(public)/about/page.tsx` | Sección "About this project" |
 | `/counter` | `app/(dashboard)/counter/page.tsx` | Contador interactivo (Client Component) |
 
@@ -49,8 +62,8 @@ Regla de oro del App Router: **la carpeta define la URL, el archivo define el ro
 Las carpetas entre paréntesis son *route groups*: **no aparecen en la URL**, solo sirven para agrupar rutas y darles un layout propio. Cada grupo tiene su layout, y el layout raíz (`app/layout.tsx`) solo define `<html>`, fuentes y metadata.
 
 - `(public)` agrupa `/` y `/about`. Su layout pinta el `Navbar` (links Home, Students, Counter, About) y un `<main>` centrado.
-- `(auth)` agrupa `/login`. Su layout muestra la marca y una tarjeta centrada donde se renderiza el formulario.
-- `(dashboard)` agrupa `/students`, `/students/[id]` y `/counter`. Su layout es un `flex` de pantalla completa con `Sidebar` a la izquierda (barra superior compacta en móvil) y el contenido a la derecha.
+- `(auth)` agrupa `/login` y `/register`. Su layout muestra la marca y una tarjeta centrada para los formularios.
+- `(dashboard)` agrupa `/students` y sus subrutas, junto con `/counter`. El layout verifica la sesión y muestra el nombre completo del usuario encima del contenido. `Sidebar` incluye **Cerrar sesión** en escritorio y móvil.
 
 ## Estructura del proyecto
 
@@ -65,9 +78,12 @@ app/
     layout.tsx          Tarjeta centrada con la marca
     actions.ts          Server Actions: loginAction, registerAction, logoutAction
     login/page.tsx      /login
+    register/page.tsx   /register
   (dashboard)/
-    layout.tsx          Sidebar + contenido
+    layout.tsx          Sesión, nombre y sidebar
     students/page.tsx   /students
+    students/new/page.tsx  /students/new
+    students/actions.ts    Acción para crear un estudiante
     students/[id]/page.tsx  /students/:id
     counter/page.tsx    /counter
 components/
@@ -77,6 +93,7 @@ components/
   Paginator.tsx         Paginador por links (<, números con "...", >); conserva los params
   auth/
     LoginForm.tsx       Client Component: formulario ligado a loginAction con useActionState
+    RegisterForm.tsx    Formulario para crear una cuenta
   form-ui/
     Input.tsx           Input con label
     SubmitButton.tsx    Botón de envío con estado pending
@@ -85,21 +102,23 @@ components/
     SidebarMenu.tsx     Client Component: marca el item activo con usePathname
     SidebarMenuItem.tsx Item individual del menú
   students/
+    CreateStudentForm.tsx  Formulario protegido para crear un estudiante
     StudentTable.tsx    Tabla; recibe students por props
     StudentRow.tsx      Fila de un estudiante
     StudentBadge.tsx    Badge Active / Inactive
     StudentSearch.tsx   Client Component: input de búsqueda con debounce que escribe `?q=`
 lib/
-  api.ts                Instancia de axios (baseURL = API_URL) y clase ApiError; solo servidor
-  student-api.ts        getStudents y getStudent: llamadas a la API con caché
-  auth-api.ts           login y register contra la API (/user/auth, /user/signup); solo servidor
-  session.ts            Cookie de sesión: createSession, deleteSession, getToken; solo servidor
+  api.ts                Instancia de axios con API_URL
+  student-api.ts        Listado, consulta y creación de estudiantes
+  auth-api.ts           Login, registro y perfil de la cuenta
+  session.ts            Cookie de sesión y verificación del usuario en NestJS
   student-list.ts       Funciones puras: filterStudents, paginate, getPageNumbers
 data/students.mock.ts   Mock tipado de estudiantes
 interfaces/
   student.interface.ts  Tipo Student
   nav-links.interface.ts  Tipo NavLinks ({ href, title })
   menu-item.interface.ts  Tipo MenuItem ({ path, icon, title, subtitle })
+proxy.ts                Redirección al login desde rutas protegidas
 ```
 
 ## Cómo está construido
@@ -135,18 +154,21 @@ El estado vive en la URL (`/students?q=ana&page=2`), no en `useState`: así se p
 
 Hay dos `Suspense`: uno para el buscador (usa `useSearchParams`) y otro con el fallback "Cargando estudiantes..." para los resultados. El filtrado y la paginación ocurren en memoria sobre lo que devuelva la API, no en la API.
 
-## Autenticación: login con JWT
+## Autenticación y creación de estudiantes
 
-Flujo actual, de punta a punta:
+1. `RegisterForm` reutiliza `Input` y `SubmitButton`. Al enviar el formulario, `registerAction` valida los datos y llama a `POST /user/signup`. Si la API crea la cuenta, vuelve a `/login` con una confirmación.
+2. `LoginForm` envía las credenciales a `loginAction`, que llama a `POST /user/auth`. Next.js guarda el JWT en una cookie `HttpOnly` durante una hora. El login exitoso abre `/students` o el destino interno válido de `from`.
+3. `proxy.ts` intercepta `/students` y sus subrutas y `/counter`. Si falta la cookie, envía la visita a `/login` con la ruta original en `from`. `requireSession` consulta `GET /user/me` y NestJS valida la firma, la vigencia y que la cuenta siga activa. El layout usa `fullName` de ese perfil.
+4. `CreateStudentForm` vive en `/students/new` y usa `useActionState` para mostrar errores y el estado de guardado. `createStudentAction` verifica la sesión antes de validar los campos y enviar `POST /student` con el JWT. El guard de NestJS vuelve a verificar el JWT antes de insertar. Al guardar, Next.js invalida el listado y abre el detalle del estudiante.
+5. **Cerrar sesión** ejecuta `logoutAction`, borra la cookie y redirige a `/login`.
 
-1. `/login` renderiza `LoginForm` (Client Component) dentro de un `Suspense`, porque lee `searchParams` para el `?from=`.
-2. El form usa `useActionState(loginAction, ...)`: `loginAction` (`app/(auth)/actions.ts`, `"use server"`) normaliza el email, exige contraseña de al menos 8 caracteres y llama a `login()` de `lib/auth-api.ts` (`POST {API_URL}/user/auth`).
-3. Si la API responde con `{ token }`, `createSession` (`lib/session.ts`) lo guarda en la cookie `token`: `httpOnly`, `sameSite: "lax"`, `path: "/"`, 1 hora. Luego `redirect("/students")`.
-4. Si falla, la action devuelve `{ error }` (credenciales incorrectas si es `ApiError`, error de servidor en otro caso) y el form lo muestra en un `<p role="alert">`. Un email inválido o contraseña corta se rechaza antes de llamar a la API y conserva el email escrito.
+### Cómo probar la protección
 
-`registerAction` (`POST /user/signup`) y `logoutAction` (borra la cookie y va a `/login`) ya existen en `actions.ts`.
-
-> **Pendiente (no existe aún):** la página `/register` (el link "Registrate" del login apunta a ella), un botón que invoque `logoutAction`, la protección de rutas del dashboard, y enviar el token en `Authorization` desde `lib/api.ts` (`getToken()` todavía no se usa). El campo oculto `from` se envía en el form pero `loginAction` aún no lo lee: siempre redirige a `/students`.
+1. Arranca NestJS y Next.js. En incógnito abre `http://localhost:3000/students/new`. Debe aparecer el login con `from=/students/new` en la URL. Repite con `/students` y con el detalle de un estudiante.
+2. En `/register`, crea una cuenta de prueba. Debes volver a `/login`. Inicia sesión y verifica que aparezca tu nombre completo encima de **Estudiantes**.
+3. Selecciona **Crear estudiante**. Usa un correo diferente al de tu cuenta, completa los campos y pulsa **Guardar estudiante**. Comprueba el nombre y el correo en la ficha y vuelve al listado para confirmar que aparece el registro.
+4. Pulsa **Cerrar sesión** y vuelve a abrir `/students/new`. Debe aparecer de nuevo el login. Si inicias sesión desde esa pantalla, debes volver al formulario.
+5. Para probar la API de forma directa, ejecuta `curl.exe -i -X POST http://localhost:9000/api/student -H "Content-Type: application/json" -d "{}"`. La respuesta esperada sin token es `401 Unauthorized`.
 
 ## Capa de acceso a la API: `lib/api.ts` y `lib/student-api.ts`
 
@@ -156,17 +178,17 @@ Las páginas ya no llaman a `fetch` directamente: pasan por esta capa.
 
 - `import "server-only"`: si un Client Component lo importa, el build falla. Así `API_URL` no viaja al navegador.
 - `api`: instancia de axios con `baseURL: process.env.API_URL`, header `Content-Type: application/json` y `timeout` de 10 s.
-- `ApiError(status, message)`: error propio con el status HTTP (definido, aún sin usar).
-- El interceptor de respuesta hoy es un passthrough; es el lugar para mapear errores a `ApiError`.
+- Las acciones usan el estado HTTP de los errores de axios para mostrar mensajes al usuario.
 
 ### `lib/student-api.ts`
 
-Ambas funciones usan `"use cache"` + `cacheLife("minutes")` (requiere `cacheComponents`):
+Las consultas usan `"use cache"` y `cacheLife("minutes")`.
 
 | Función | Request | Tag de caché |
 |---------|---------|--------------|
 | `getStudents(limit = 1000)` | `GET /student?limit={limit}` | `students` |
 | `getStudent(term)` | `GET /student/{term}` (con `encodeURIComponent`) | `student` |
+| `createStudent(student, token)` | `POST /student` con `Authorization: Bearer …` | — |
 
 También reexporta los tipos `Student` y `Grade`.
 
@@ -256,10 +278,6 @@ Es síncrona y no hace `await`: solo arma la estructura y le pasa a `StudentResu
 
 Página de detalle `/students/:id`. El segmento `[id]` es dinámico: el valor de la URL llega en `params.id`.
 
-### Tipos locales
-
-`Grade` (`subject`, `grade`) y `Student` (`id`, `name`, `email`, `nickname`, `grades?` opcional). Están definidos en el archivo y no reutilizan `interfaces/student.interface.ts` (aunque `lib/student-api.ts` sí los reexporta).
-
 ### `getStudentById(id)` (con caché)
 
 ```ts
@@ -278,19 +296,9 @@ async function getStudentById(id: string) {
 4. **Fetch:** delega en `getStudent(id)` de `lib/student-api.ts` (`GET {API_URL}/student/{id}`). Hay dos capas de caché: la de `getStudent` y la de `getStudentById`.
 5. **Retorno:** `{ student, generatedAt }`. Como `generatedAt` se calcula dentro de la función cacheada, la fecha mostrada es la de cuando se generó el caché, no la del request.
 
-### `generateStaticParams()`
-
-Pide la lista con `getStudents()` y devuelve `[{ id }, ...]`. Next usa esa lista para pre-renderizar las páginas de detalle en el build. Consecuencia: **la API tiene que estar arriba al hacer `pnpm build`**.
-
-### `generateMetadata({ params })`
-
-Busca el estudiante (reusa `getStudentById`, que está en caché) y devuelve `title` (nombre) y `description` ("Profile of ...").
-
-> **Bug conocido:** la función no tiene `export`, así que Next la ignora y el título de la pestaña no cambia al nombre del estudiante. Basta con `export async function generateMetadata`.
-
 ### `StudentDetail` y `StudentDetailPage`
 
-- `StudentDetail` (async): hace `await params`, llama a `getStudentById` y muestra nombre (`h1`), email y `@nickname`, la lista de notas (`student.grades?.map`, con `key={grade.subject}`; si no hay notas no pinta nada) y "Generado {generatedAt}".
+- `StudentDetail` verifica la sesión, lee `params` y llama a `getStudentById`. Muestra el nombre, email, `@nickname`, las notas si existen y la fecha de generación del caché.
 - `StudentDetailPage` (export por defecto, síncrona) envuelve a `StudentDetail` en un `Suspense` con el fallback "Cargando estudiante...", y le pasa la Promise de `params` sin esperarla.
 
 ## Scripts

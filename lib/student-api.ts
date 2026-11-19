@@ -1,6 +1,6 @@
 import { cacheLife, cacheTag } from 'next/cache';
-import { Grade, Student } from '../interfaces/student.interface';
-import { api } from './api';
+import { type CreateStudentInput, type Grade, type Student } from '../interfaces/student.interface';
+import { api, bearerHeaders } from './api';
 
 
 export type { Grade, Student}
@@ -24,4 +24,10 @@ export async function getStudent(term: string){
     }catch(error){
         throw error;
     }
+}
+
+export async function createStudent(student: CreateStudentInput, token: string) {
+    const { data } = await api.post<Student>("/student", student, { headers: bearerHeaders(token) });
+    if (!data?.id) throw new Error("The student API did not return a student ID.");
+    return data;
 }

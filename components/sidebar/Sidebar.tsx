@@ -1,12 +1,11 @@
-import { students } from "@/data/students.mock";
+import { logoutAction } from "@/app/(auth)/actions";
 import { MenuItem } from "@/interfaces/menu-item.interface";
-import { all } from "axios";
 import Link from "next/link";
 import { Suspense } from "react";
 import { Brand } from "../Brand";
 import { SidebarMenu } from "./SidebarMenu";
 import { SidebarMenuItem } from "./SidebarMenuItem";
-import { IoPeopleOutline, IoCheckmarkCircleOutline, IoWomanOutline } from "react-icons/io5";
+import { IoPeopleOutline, IoCheckmarkCircleOutline, IoLogOutOutline } from "react-icons/io5";
 
 const menuItems: MenuItem[] = [
     {
@@ -17,11 +16,23 @@ const menuItems: MenuItem[] = [
     },
     
 ];
+
+function LogoutButton() {
+    return (
+        <form action={logoutAction}>
+            <button type="submit" className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md px-2 py-1 hover:bg-slate-800 hover:text-white md:px-3 md:py-2">
+                <IoLogOutOutline aria-hidden="true" />
+                Cerrar sesión
+            </button>
+        </form>
+    );
+}
+
 export function Sidebar() {
     return (
         <>
             {/* Mobile: compact top bar */}
-            <header className="flex gap-4 overflow-x-auto bg-gray-900 p-4 text-sm text-slate-300
+            <header className="flex items-center gap-4 overflow-x-auto bg-gray-900 p-4 text-sm text-slate-300
 md:hidden">
                 <Link href="/" className="whitespace-nowrap text-white">
                     <Brand />
@@ -31,6 +42,7 @@ md:hidden">
                         {item.title}
                     </Link>
                 ))}
+                <LogoutButton />
             </header>
             {/* Desktop (md+): sidebar like the 2026-1 DashStudents app */}
             <aside className="hidden w-72 shrink-0 flex-col overflow-y-auto bg-gray-900 text-slate-300 md:flex">
@@ -49,6 +61,9 @@ md:hidden">
                         <SidebarMenu items={menuItems} />
                     </Suspense>
                 </nav>
+                <div className="mt-auto px-6 py-6">
+                    <LogoutButton />
+                </div>
             </aside>
         </>
     );

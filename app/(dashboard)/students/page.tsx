@@ -8,11 +8,15 @@ import { Suspense } from 'react';
 import { getStudents } from '@/lib/student-api';
 import { Paginator } from '@/components/Paginator';
 import { StudentSearch } from '@/components/students/StudentSearch';
+import { CREATE_STUDENT_PATH } from '@/lib/auth-routes';
+import { requireSession } from '@/lib/session';
+import Link from 'next/link';
 
 const PAGE_SIZE = 6;
 
 
 async function StudentResults({searchParams}: Pick<PageProps<"/students">, "searchParams">){
+  await requireSession();
   const {q, page} = await searchParams;
   const term = typeof q === "string" ? q: "";
 
@@ -51,9 +55,16 @@ export default function StudentPage({searchParams}: PageProps<"/students">) {
 
   return (
      <Section id="students" title="Estudiantes">
-      <Suspense>
-        <StudentSearch/>
-      </Suspense>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="basis-full sm:flex-1">
+          <Suspense>
+            <StudentSearch/>
+          </Suspense>
+        </div>
+        <Link href={CREATE_STUDENT_PATH} className="shrink-0 rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+          Crear estudiante
+        </Link>
+      </div>
       <Suspense fallback={<p className='text-2xl text-gray-500'>Cargando estudiantes...</p>}>
               <StudentResults searchParams={searchParams}/>
       </Suspense>

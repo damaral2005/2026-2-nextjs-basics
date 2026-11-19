@@ -1,0 +1,248 @@
+diff --git a/src/student/student.controller.ts b/src/student/student.controller.ts
+index fa5896c..5b30af9 100644
+--- a/src/student/student.controller.ts
++++ b/src/student/student.controller.ts
+@@ -1,4 +1,5 @@
+-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
++import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
++import { AuthGuard } from '@nestjs/passport';
+ import { StudentService } from './student.service';
+ import { CreateStudent } from './dto/create-student.dto';
+ import { PaginationDto } from './dto/pagination.dto';
+@@ -9,6 +10,7 @@ export class StudentController {
+   constructor(private readonly studentService: StudentService) {}
+ 
+   @Post()
++  @UseGuards(AuthGuard('jwt'))
+   create(@Body() createStudentDto: CreateStudent){
+     return this.studentService.createStudent(createStudentDto);
+   }
+diff --git a/src/student/student.module.ts b/src/student/student.module.ts
+index 6e5727b..98a24a4 100644
+--- a/src/student/student.module.ts
++++ b/src/student/student.module.ts
+@@ -4,12 +4,13 @@ import { StudentController } from './student.controller';
+ import { TypeOrmModule } from '@nestjs/typeorm';
+ import { Student } from './entities/student.entity';
+ import { Grades } from './entities/grades.entity';
++import { UserModule } from '../user/user.module';
+ 
+ @Module({
+   controllers: [StudentController],
+   imports:[
+-    TypeOrmModule.forFeature([Student, Grades])
+-    
++    TypeOrmModule.forFeature([Student, Grades]),
++    UserModule,
+   ],
+   providers: [StudentService],
+   exports: [StudentService],
+diff --git a/src/student/student.service.ts b/src/student/student.service.ts
+index e581318..6ca4cc0 100644
+--- a/src/student/student.service.ts
++++ b/src/student/student.service.ts
+@@ -1,4 +1,4 @@
+-import { Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
++import { ConflictException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+ import { InjectRepository } from '@nestjs/typeorm';
+ import { Student } from './entities/student.entity';
+ import { DataSource, Repository } from 'typeorm';
+@@ -21,7 +21,7 @@ export class StudentService {
+         private datasource: DataSource
+     ){}
+ 
+-    async createStudent(createStudentDto: CreateStudent): Promise<Student | undefined>{
++    async createStudent(createStudentDto: CreateStudent): Promise<Student>{
+         try{
+             const {grades = [], ...studentDetails} = createStudentDto;
+             const student = this.studentRepository.create({
+@@ -30,8 +30,11 @@ export class StudentService {
+             });
+             await this.studentRepository.save(student);
+             return student;
+-        }catch(error){
+-            this.handleException(error);
++        } catch (error) {
++            if (error?.code === '23505') {
++                throw new ConflictException('A student with this email already exists.');
++            }
++            throw error;
+         }
+     }
+ 
+@@ -118,7 +121,7 @@ export class StudentService {
+       return query.delete()
+                         .execute();
+     }catch(error){
+-      this.handleException(error);
++            this.handleException(error);
+     }
+   }
+ 
+diff --git a/src/user/jwt.strategy.ts b/src/user/jwt.strategy.ts
+new file mode 100644
+index 0000000..bd528b8
+--- /dev/null
++++ b/src/user/jwt.strategy.ts
+@@ -0,0 +1,21 @@
++import { Injectable, UnauthorizedException } from '@nestjs/common';
++import { ConfigService } from '@nestjs/config';
++import { PassportStrategy } from '@nestjs/passport';
++import { ExtractJwt, Strategy } from 'passport-jwt';
++import { UserService } from './user.service';
++
++@Injectable()
++export class JwtStrategy extends PassportStrategy(Strategy) {
++  constructor(configService: ConfigService, private readonly users: UserService) {
++    super({
++      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
++      secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
++      algorithms: ['HS256'],
++    });
++  }
++
++  validate(payload: { sub?: unknown }) {
++    if (typeof payload.sub !== 'string') throw new UnauthorizedException();
++    return this.users.getActiveProfile(payload.sub);
++  }
++}
+diff --git a/src/user/user.controller.ts b/src/user/user.controller.ts
+index 679bcac..82ed615 100644
+--- a/src/user/user.controller.ts
++++ b/src/user/user.controller.ts
+@@ -1,5 +1,7 @@
+-import { Controller,  Post, Body } from '@nestjs/common';
+-import { UserService } from './user.service';
++import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
++import { AuthGuard } from '@nestjs/passport';
++import type { Request } from 'express';
++import { UserService, type UserProfile } from './user.service';
+ import { Register } from './dto/register.dto';
+ import { Login } from './dto/login.dto';
+ 
+@@ -17,4 +19,10 @@ export class UserController {
+     return this.userService.login(loginDto);
+   }
+ 
++  @Get('me')
++  @UseGuards(AuthGuard('jwt'))
++  profile(@Req() request: Request & { user: UserProfile }) {
++    return request.user;
++  }
++
+ }
+diff --git a/src/user/user.module.ts b/src/user/user.module.ts
+index 2c79f55..6c3f631 100644
+--- a/src/user/user.module.ts
++++ b/src/user/user.module.ts
+@@ -6,10 +6,12 @@ import { User } from './entities/user.entity';
+ import { PassportModule } from '@nestjs/passport';
+ import { JwtModule } from '@nestjs/jwt';
+ import { ConfigModule, ConfigService } from '@nestjs/config';
++import { JwtStrategy } from './jwt.strategy';
+ 
+ @Module({
+   controllers: [UserController],
+   imports: [
++    ConfigModule,
+     TypeOrmModule.forFeature([User]),
+     PassportModule.register({defaultStrategy : 'jwt'}),
+     JwtModule.registerAsync({
+@@ -17,7 +19,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
+       inject: [ConfigService],
+       useFactory: (configService : ConfigService) => {
+         return {
+-          secret: configService.get("JWT_SECRET"),
++          secret: configService.getOrThrow<string>("JWT_SECRET"),
+           signOptions: {
+             expiresIn: '1h'
+           }
+@@ -25,7 +27,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
+       }
+     })
+   ],
+-  providers: [UserService, ConfigService],
++  providers: [UserService, JwtStrategy],
+   exports: [TypeOrmModule, PassportModule, JwtModule]
+ })
+ export class UserModule {}
+diff --git a/src/user/user.service.ts b/src/user/user.service.ts
+index 35e6533..a0f22e1 100644
+--- a/src/user/user.service.ts
++++ b/src/user/user.service.ts
+@@ -1,4 +1,5 @@
+-import { Injectable, InternalServerErrorException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
++import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
++import { JwtService } from '@nestjs/jwt';
+ import { Register } from './dto/register.dto';
+ import { InjectRepository } from '@nestjs/typeorm';
+ import { Repository } from 'typeorm';
+@@ -6,13 +7,14 @@ import { User } from './entities/user.entity';
+ import bcrypt from "bcrypt";
+ import { Login } from './dto/login.dto';
+ 
++export type UserProfile = Pick<User, 'id' | 'email' | 'fullName'>;
++
+ @Injectable()
+ export class UserService {
+-  private readonly logger = new Logger("UserService");
+-  
+   constructor(
+     @InjectRepository(User)
+-    private readonly userRepository : Repository<User>
++    private readonly userRepository: Repository<User>,
++    private readonly jwtService: JwtService,
+   ){}
+ 
+   async create(registerDto: Register) {
+@@ -25,8 +27,11 @@ export class UserService {
+       await this.userRepository.save(user);
+       delete user.password;
+       return user;
+-    }catch(error){
+-      this.handleException(error);
++    } catch (error) {
++      if (error?.code === '23505') {
++        throw new ConflictException('An account with this email already exists.');
++      }
++      throw error;
+     }
+   }
+ 
+@@ -37,8 +42,8 @@ export class UserService {
+   async login(loginDto: Login){
+     const {email, password} = loginDto;
+     const user = await this.userRepository.findOne({
+-      where: {email},
+-      select: {email: true, password: true, id: true}
++      where: { email, isActive: true },
++      select: { email: true, password: true, id: true, fullName: true }
+     })
+ 
+     if(!user) throw new UnauthorizedException(`Email or password incorrect`);
+@@ -46,15 +51,18 @@ export class UserService {
+     if(!bcrypt.compareSync(password, user.password!))
+       throw new UnauthorizedException(`Email or password incorrect`);
+ 
+-    delete user.password;
+-    return user;
++    const { id, fullName } = user;
++    const token = await this.jwtService.signAsync({ sub: id });
++    return { id, email: user.email, fullName, token };
+   }
+ 
+-  private handleException(error:any){
+-          this.logger.error(error);
+-          if(error.code === '23505'){
+-              throw new InternalServerErrorException(error.detail);
+-          }
++  async getActiveProfile(id: string): Promise<UserProfile> {
++    const user = await this.userRepository.findOne({
++      where: { id, isActive: true },
++      select: { id: true, email: true, fullName: true },
++    });
++    if (!user) throw new UnauthorizedException();
++    return user;
+   }
+ 
+  

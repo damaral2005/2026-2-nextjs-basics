@@ -1,10 +1,7 @@
-import { getStudent, getStudents } from '@/lib/student-api';
-import { Metadata } from 'next';
+import { requireSession } from '@/lib/session';
+import { getStudent, type Student } from '@/lib/student-api';
 import { cacheLife, cacheTag } from 'next/cache';
 import React, { Suspense } from 'react'
-
-type Grade = { subject: string; grade: number};
-type Student = {id: string; name: string; email:string; nickname:string; grades?: Grade[] };
 
 async function getStudentById(id:string){
     "use cache"
@@ -15,18 +12,8 @@ async function getStudentById(id:string){
     return { student, generatedAt: new Date().toISOString()};
 }
 
-export async function  generateStaticParams(){
-    const students: Student[] = await getStudents();
-    return students.map((student) => ({ id: student.id}));
-}
-
-async function generateMetadata({params} : PageProps<"/students/[id]">): Promise<Metadata>{
- const {id} = await params;
- const {student} = await getStudentById(id);
- return {title: student.name, description: `Profile of ${student.name}`}
-}
-
 async function StudentDetail({params} : Pick<PageProps<"/students/[id]">, "params">) {
+    await requireSession();
     const {id}= await params;
     const {student, generatedAt} = await getStudentById(id);
   return (
@@ -38,14 +25,16 @@ async function StudentDetail({params} : Pick<PageProps<"/students/[id]">, "param
         <p>
             Nickname: @{student.nickname}
         </p>
-        <ul>
-            <span className='font-bold text-xl'>Materias:</span>
-            {student.grades?.map((grade)=>(
-                <li key={grade.subject}>
-                    {grade.subject}: {grade.grade}
-                </li>
-            ))}
-        </ul>
+        {!!student.grades?.length && (
+            <section>
+                <h2 className='text-xl font-bold'>Materias</h2>
+                <ul>
+                    {student.grades.map((grade) => (
+                        <li key={grade.id}>{grade.subject}: {grade.grade}</li>
+                    ))}
+                </ul>
+            </section>
+        )}
         <p className='text-xs text-gray-500'> Generado el {generatedAt}</p>
     </article>
   )

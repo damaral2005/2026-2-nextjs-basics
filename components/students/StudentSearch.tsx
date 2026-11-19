@@ -40,8 +40,8 @@ export const StudentSearch = () => {
         defaultValue={urlTerm}
         onChange={(event)=> handleChange(event.target.value)}
         placeholder='Busca por nombre, nickname o id'
-        aria-label='Search students'
-        className='w-full rounded-lg border border-slate-300 bg-slate-400 p-2'
+        aria-label='Buscar estudiantes'
+        className='w-full rounded-lg border border-slate-300 bg-white p-2'
     />
   )
 }

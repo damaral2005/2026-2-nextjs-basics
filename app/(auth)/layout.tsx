@@ -8,7 +8,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <h1 className="text-2xl text-white md:text-3xl">
             <Brand />
           </h1>
-          <p className="mt-1 text-sm text-slate-400">Manage your student&apos;s application</p>
+          <p className="mt-1 text-sm text-slate-400">Administrador de estudiantes</p>
         </div>
         <div className="rounded-lg bg-gray-800 p-8 shadow-lg">{children}</div>
       </div>
